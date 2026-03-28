@@ -1,0 +1,121 @@
+{
+  "entities": {
+    "user": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "application": {
+      "title": "Application",
+      "description": "Job or internship application record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyName": { "type": "string" },
+        "position": { "type": "string" },
+        "source": { "type": "string" },
+        "status": { 
+          "type": "string",
+          "enum": ["Bookmarked", "Applied", "Phone Screen", "Interview", "Offer", "Rejected", "Archived"]
+        },
+        "applicationDate": { "type": "string", "format": "date-time" },
+        "salary": { "type": "string" },
+        "benefits": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyName", "position", "status"]
+    },
+    "company": {
+      "title": "Company",
+      "description": "Company profile information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "size": { "type": "string" },
+        "industry": { "type": "string" },
+        "location": { "type": "string" },
+        "website": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "contact": {
+      "title": "Contact",
+      "description": "Recruiter or hiring manager contact information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "linkedInUrl": { "type": "string" },
+        "companyId": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "interview": {
+      "title": "Interview",
+      "description": "Scheduled interview event",
+      "type": "object",
+      "properties": {
+        "applicationId": { "type": "string" },
+        "type": { "type": "string", "enum": ["Phone Screen", "Video Interview", "In-person"] },
+        "date": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" },
+        "questions": { "type": "string" },
+        "feedback": { "type": "string" },
+        "outcome": { "type": "string" }
+      },
+      "required": ["applicationId", "date", "type"]
+    },
+    "task": {
+      "title": "Task",
+      "description": "To-do item linked to an application",
+      "type": "object",
+      "properties": {
+        "applicationId": { "type": "string" },
+        "title": { "type": "string" },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "priority": { "type": "string", "enum": ["Low", "Medium", "High"] },
+        "completed": { "type": "boolean" }
+      },
+      "required": ["title", "completed"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "User profile data"
+    },
+    "/users/{userId}/applications/{applicationId}": {
+      "schema": "application",
+      "description": "List of job applications for a user"
+    },
+    "/users/{userId}/companies/{companyId}": {
+      "schema": "company",
+      "description": "Company profiles saved by a user"
+    },
+    "/users/{userId}/contacts/{contactId}": {
+      "schema": "contact",
+      "description": "Contacts saved by a user"
+    },
+    "/users/{userId}/interviews/{interviewId}": {
+      "schema": "interview",
+      "description": "Interviews scheduled by a user"
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": "task",
+      "description": "Tasks created by a user"
+    }
+  }
+}
