@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { auth, onAuthStateChanged, signInWithPopup, signInWithRedirect, googleProvider, signOut, db, doc, setDoc, getDoc } from './firebase';
 import { UserProfile } from './types';
+import { ToastProvider } from './contexts/ToastContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -25,7 +27,7 @@ import CompanyList from './components/CompanyList';
 import ContactList from './components/ContactList';
 import DocumentsList from './components/DocumentsList';
 
-const SidebarItem = ({ to, icon: Icon, label, active }: { to: string, icon: any, label: string, active: boolean }) => (
+const SidebarItem = ({ to, icon: Icon, label, active }: { to: string, icon: React.ElementType, label: string, active: boolean }) => (
   <Link 
     to={to} 
     className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
@@ -162,8 +164,8 @@ const Login = () => {
           createdAt: new Date().toISOString()
         });
       }
-    } catch (error: any) {
-      const authCode = error?.code || 'auth/unknown';
+    } catch (error) {
+      const authCode = (error as { code?: string })?.code || 'auth/unknown';
       console.error('Login error:', authCode, error);
 
       if (authCode === 'auth/popup-blocked' || authCode === 'auth/cancelled-popup-request') {
@@ -246,6 +248,8 @@ export default function App() {
   }
 
   return (
+    <ErrorBoundary>
+      <ToastProvider>
     <Router>
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
@@ -272,5 +276,7 @@ export default function App() {
         />
       </Routes>
     </Router>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }

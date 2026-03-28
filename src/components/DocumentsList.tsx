@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { listenToDocuments, deleteDocument, updateDocument, handleFirestoreError, OperationType } from '../firebase';
+import { listenToDocuments, deleteDocument } from '../firebase';
 import { Document, UserProfile, DocumentType, DocumentCategory } from '../types';
+import { useToast } from '../contexts/ToastContext';
+import { formatFileSize } from '../utils';
+import { TYPE_COLORS, CATEGORY_COLORS } from '../constants';
 import { 
   Search, 
   Filter, 
@@ -20,29 +23,8 @@ import {
 } from 'lucide-react';
 import DocumentUploadModal from './DocumentUploadModal';
 
-const TYPE_COLORS: Record<DocumentType, string> = {
-  'Resume': 'bg-blue-100 text-blue-600',
-  'Cover Letter': 'bg-green-100 text-green-600',
-  'Offer Letter': 'bg-purple-100 text-purple-600',
-  'Certification': 'bg-orange-100 text-orange-600',
-  'Portfolio': 'bg-pink-100 text-pink-600',
-  'Other': 'bg-gray-100 text-gray-600'
-};
-
-const CATEGORY_COLORS: Record<DocumentCategory, string> = {
-  'General': 'bg-gray-50 text-gray-600',
-  'Application': 'bg-blue-50 text-blue-600'
-};
-
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
 export default function DocumentsList({ user }: { user: UserProfile }) {
+  const toast = useToast();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -75,8 +57,9 @@ export default function DocumentsList({ user }: { user: UserProfile }) {
     if (window.confirm('Are you sure you want to delete this document?')) {
       try {
         await deleteDocument(doc.id, user.uid, doc.storagePath);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/documents/${doc.id}`);
+        toast.success('Document deleted.');
+      } catch {
+        toast.error('Failed to delete document.');
       }
     }
   };
@@ -132,7 +115,7 @@ export default function DocumentsList({ user }: { user: UserProfile }) {
           <select 
             className="bg-transparent border-none focus:ring-0 text-sm font-medium"
             value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value as any)}
+            onChange={(e) => setTypeFilter(e.target.value as DocumentType | 'All')}
           >
             <option value="All">All Types</option>
             <option value="Resume">Resume</option>
@@ -148,7 +131,7 @@ export default function DocumentsList({ user }: { user: UserProfile }) {
           <select 
             className="bg-transparent border-none focus:ring-0 text-sm font-medium"
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value as any)}
+            onChange={(e) => setCategoryFilter(e.target.value as DocumentCategory | 'All')}
           >
             <option value="All">All Categories</option>
             <option value="General">General</option>

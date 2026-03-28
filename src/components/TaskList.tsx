@@ -1,6 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { db, collection, onSnapshot, query, where, addDoc, updateDoc, deleteDoc, doc, handleFirestoreError, OperationType } from '../firebase';
-import { Task, UserProfile, Application } from '../types';
+import React, { useState } from 'react';
+import { Task, UserProfile } from '../types';
+import { useApplications } from '../hooks/useApplications';
+import { useTasks } from '../hooks/useTasks';
+import { createTask, updateTask, deleteTask } from '../services/taskService';
+import { useToast } from '../contexts/ToastContext';
+import { PRIORITY_COLORS } from '../constants';
 import { 
   CheckSquare, 
   Plus, 
@@ -14,75 +18,50 @@ import {
 } from 'lucide-react';
 
 export default function TaskList({ user }: { user: UserProfile }) {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { tasks, loading } = useTasks(user.uid);
+  const { applications } = useApplications(user.uid);
+  const toast = useToast();
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedAppId, setSelectedAppId] = useState('');
-
-  useEffect(() => {
-    const qTasks = query(collection(db, `users/${user.uid}/tasks`));
-    const unsubscribeTasks = onSnapshot(qTasks, (snapshot) => {
-      setTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task)));
-      setLoading(false);
-    });
-
-    const qApps = query(collection(db, `users/${user.uid}/applications`));
-    const unsubscribeApps = onSnapshot(qApps, (snapshot) => {
-      setApplications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Application)));
-    });
-
-    return () => {
-      unsubscribeTasks();
-      unsubscribeApps();
-    };
-  }, [user.uid]);
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
 
     try {
-      await addDoc(collection(db, `users/${user.uid}/tasks`), {
+      await createTask(user.uid, {
         title: newTaskTitle,
-        applicationId: selectedAppId || null,
+        applicationId: selectedAppId || undefined,
         completed: false,
         priority: 'Medium',
-        dueDate: new Date().toISOString()
+        dueDate: new Date().toISOString(),
       });
       setNewTaskTitle('');
       setSelectedAppId('');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/tasks`);
+      toast.success('Task added.');
+    } catch {
+      toast.error('Failed to add task. Please try again.');
     }
   };
 
   const toggleTask = async (task: Task) => {
     try {
-      await updateDoc(doc(db, `users/${user.uid}/tasks`, task.id), {
-        title: task.title,
-        completed: !task.completed
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/tasks/${task.id}`);
+      await updateTask(user.uid, task.id, { completed: !task.completed });
+    } catch {
+      toast.error('Failed to update task.');
     }
   };
 
-  const deleteTask = async (id: string) => {
+  const handleDeleteTask = async (id: string) => {
     try {
-      await deleteDoc(doc(db, `users/${user.uid}/tasks`, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/tasks/${id}`);
+      await deleteTask(user.uid, id);
+    } catch {
+      toast.error('Failed to delete task.');
     }
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'High': return 'text-red-500 bg-red-50';
-      case 'Medium': return 'text-amber-500 bg-amber-50';
-      case 'Low': return 'text-blue-500 bg-blue-50';
-      default: return 'text-gray-500 bg-gray-50';
-    }
+  const getPriorityColor = (priority: Task['priority']): string => {
+    return PRIORITY_COLORS[priority] ?? 'text-gray-500 bg-gray-50';
   };
 
   return (
@@ -156,7 +135,7 @@ export default function TaskList({ user }: { user: UserProfile }) {
                       {task.priority}
                     </div>
                     <button 
-                      onClick={() => deleteTask(task.id)}
+                      onClick={() => handleDeleteTask(task.id)}
                       className="p-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
                     >
                       <Trash2 size={18} />
@@ -187,7 +166,7 @@ export default function TaskList({ user }: { user: UserProfile }) {
                     <div className="flex-1 min-w-0">
                       <h4 className="font-medium text-sm line-through text-gray-400">{task.title}</h4>
                     </div>
-                    <button onClick={() => deleteTask(task.id)} className="p-2 text-gray-300 hover:text-red-500">
+                    <button onClick={() => handleDeleteTask(task.id)} className="p-2 text-gray-300 hover:text-red-500">
                       <Trash2 size={18} />
                     </button>
                   </div>

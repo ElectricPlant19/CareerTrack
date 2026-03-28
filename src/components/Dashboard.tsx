@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { db, collection, onSnapshot, query, where, handleFirestoreError, OperationType } from '../firebase';
+import React, { useState } from 'react';
 import { Application, UserProfile, ApplicationStatus } from '../types';
+import { useApplications } from '../hooks/useApplications';
 import { 
   TrendingUp, 
   CheckCircle2, 
@@ -29,7 +29,7 @@ import {
 } from 'recharts';
 import KanbanBoard from './KanbanBoard';
 
-const StatCard = ({ title, value, icon: Icon, color, trend }: { title: string, value: number | string, icon: any, color: string, trend?: { value: string, up: boolean } }) => (
+const StatCard = ({ title, value, icon: Icon, color, trend }: { title: string, value: number | string, icon: React.ElementType, color: string, trend?: { value: string, up: boolean } }) => (
   <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
     <div className="flex items-center justify-between mb-4">
       <div className={`p-3 rounded-2xl ${color} bg-opacity-10`}>
@@ -48,8 +48,7 @@ const StatCard = ({ title, value, icon: Icon, color, trend }: { title: string, v
 );
 
 export default function Dashboard({ user }: { user: UserProfile }) {
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { applications, loading } = useApplications(user.uid);
   const [view, setView] = useState<'kanban' | 'overview'>('kanban');
 
   const stats = {
@@ -81,19 +80,6 @@ export default function Dashboard({ user }: { user: UserProfile }) {
   const prevApplied = previous30Days.filter(a => a.status !== 'Bookmarked' && a.status !== 'Archived').length;
   const previousConversion = prevApplied > 0 ? (previousOffers / prevApplied) * 100 : 0;
   const conversionTrend = previousConversion > 0 ? Math.round(((currentConversion - previousConversion) / previousConversion) * 100) : 0;
-
-  useEffect(() => {
-    const q = query(collection(db, `users/${user.uid}/applications`));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const apps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Application));
-      setApplications(apps);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/applications`);
-    });
-
-    return () => unsubscribe();
-  }, [user.uid]);
 
   const conversionRate = stats.applied > 0 ? ((stats.offers / stats.applied) * 100).toFixed(1) : '0';
   const interviewRate = stats.applied > 0 ? ((stats.interviews / stats.applied) * 100).toFixed(1) : '0';

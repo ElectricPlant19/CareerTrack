@@ -1,20 +1,12 @@
 import React, { useState } from 'react';
 import { Application, ApplicationStatus, UserProfile } from '../types';
-import { db, doc, updateDoc, handleFirestoreError, OperationType } from '../firebase';
+import { updateApplicationStatus } from '../services/applicationService';
+import { useToast } from '../contexts/ToastContext';
+import { APPLICATION_STATUSES } from '../constants';
 import { MoreVertical, Calendar, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 
-const STAGES: ApplicationStatus[] = ['Bookmarked', 'Applied', 'Phone Screen', 'Interview', 'Offer', 'Rejected', 'Archived'];
-
-const STAGE_COLORS: Record<ApplicationStatus, string> = {
-  'Bookmarked': 'bg-gray-100 text-gray-600',
-  'Applied': 'bg-blue-100 text-blue-600',
-  'Phone Screen': 'bg-indigo-100 text-indigo-600',
-  'Interview': 'bg-purple-100 text-purple-600',
-  'Offer': 'bg-green-100 text-green-600',
-  'Rejected': 'bg-red-100 text-red-600',
-  'Archived': 'bg-gray-200 text-gray-500'
-};
+const STAGES: ApplicationStatus[] = APPLICATION_STATUSES;
 
 const ApplicationCard = ({
   app,
@@ -84,6 +76,7 @@ const ApplicationCard = ({
 );
 
 export default function KanbanBoard({ user, applications }: { user: UserProfile, applications: Application[] }) {
+  const toast = useToast();
   const [draggedAppId, setDraggedAppId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<ApplicationStatus | null>(null);
 
@@ -92,20 +85,9 @@ export default function KanbanBoard({ user, applications }: { user: UserProfile,
     if (!currentApp || currentApp.status === newStatus) return;
 
     try {
-      await updateDoc(doc(db, `users/${user.uid}/applications`, appId), {
-        companyName: currentApp.companyName,
-        position: currentApp.position,
-        source: currentApp.source || '',
-        status: newStatus,
-        applicationDate: currentApp.applicationDate,
-        salary: currentApp.salary || '',
-        benefits: currentApp.benefits || '',
-        notes: currentApp.notes || '',
-        tags: currentApp.tags || [],
-        updatedAt: new Date().toISOString()
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/applications/${appId}`);
+      await updateApplicationStatus(user.uid, appId, newStatus, currentApp);
+    } catch {
+      toast.error('Failed to update status. Please try again.');
     }
   };
 

@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { db, collection, addDoc, updateDoc, doc, handleFirestoreError, OperationType } from '../firebase';
 import { Application, UserProfile, ApplicationStatus } from '../types';
-import { X, Save, Plus, Tag as TagIcon } from 'lucide-react';
+import { createApplication, updateApplication } from '../services/applicationService';
+import { useToast } from '../contexts/ToastContext';
+import { getErrorMessage } from '../utils';
+import { X, Save, Plus } from 'lucide-react';
 
 export default function ApplicationForm({ user, onClose, editingApp }: { user: UserProfile, onClose: () => void, editingApp: Application | null }) {
+  const toast = useToast();
   const [formData, setFormData] = useState({
     companyName: editingApp?.companyName || '',
     position: editingApp?.position || '',
@@ -28,19 +31,21 @@ export default function ApplicationForm({ user, onClose, editingApp }: { user: U
       const data = {
         ...formData,
         applicationDate: new Date(formData.applicationDate).toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       };
 
-      const writePromise = editingApp
-        ? updateDoc(doc(db, `users/${user.uid}/applications`, editingApp.id), data)
-        : addDoc(collection(db, `users/${user.uid}/applications`), data);
-
+      if (editingApp) {
+        await updateApplication(user.uid, editingApp.id, data);
+        toast.success('Application updated.');
+      } else {
+        await createApplication(user.uid, data);
+        toast.success('Application added.');
+      }
       onClose();
-      await writePromise;
     } catch (error) {
-      handleFirestoreError(error, editingApp ? OperationType.UPDATE : OperationType.CREATE, `users/${user.uid}/applications`);
-      const message = error instanceof Error ? error.message : 'Could not save application. Please try again.';
+      const message = getErrorMessage(error);
       setSubmitError(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }

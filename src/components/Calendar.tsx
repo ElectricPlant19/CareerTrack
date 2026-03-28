@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { db, collection, onSnapshot, query, where, addDoc, updateDoc, deleteDoc, doc, handleFirestoreError, OperationType } from '../firebase';
+import React, { useState } from 'react';
 import { Interview, UserProfile, Application } from '../types';
+import { useInterviews } from '../hooks/useInterviews';
+import { useApplications } from '../hooks/useApplications';
+import { createInterview, updateInterview, deleteInterview } from '../services/interviewService';
+import { useToast } from '../contexts/ToastContext';
 import { 
   Calendar as CalendarIcon, 
   Clock, 
@@ -20,29 +23,12 @@ import {
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 
 export default function Calendar({ user }: { user: UserProfile }) {
-  const [interviews, setInterviews] = useState<Interview[]>([]);
-  const [applications, setApplications] = useState<Application[]>([]);
+  const { interviews } = useInterviews(user.uid);
+  const { applications } = useApplications(user.uid);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingInterview, setEditingInterview] = useState<Interview | null>(null);
-
-  useEffect(() => {
-    const qInterviews = query(collection(db, `users/${user.uid}/interviews`));
-    const unsubscribeInterviews = onSnapshot(qInterviews, (snapshot) => {
-      setInterviews(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Interview)));
-    });
-
-    const qApps = query(collection(db, `users/${user.uid}/applications`));
-    const unsubscribeApps = onSnapshot(qApps, (snapshot) => {
-      setApplications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Application)));
-    });
-
-    return () => {
-      unsubscribeInterviews();
-      unsubscribeApps();
-    };
-  }, [user.uid]);
 
   const renderHeader = () => (
     <div className="flex items-center justify-between mb-8">
@@ -217,9 +203,10 @@ export default function Calendar({ user }: { user: UserProfile }) {
 }
 
 const InterviewModal = ({ user, applications, onClose, editingInterview }: { user: UserProfile, applications: Application[], onClose: () => void, editingInterview: Interview | null }) => {
+  const toast = useToast();
   const [formData, setFormData] = useState({
     applicationId: editingInterview?.applicationId || '',
-    type: editingInterview?.type || 'Video Interview' as any,
+    type: (editingInterview?.type ?? 'Video Interview') as Interview['type'],
     date: editingInterview?.date ? new Date(editingInterview.date).toISOString().slice(0, 16) : format(new Date(), "yyyy-MM-dd'T'HH:mm"),
     notes: editingInterview?.notes || '',
     questions: editingInterview?.questions || '',
@@ -232,27 +219,30 @@ const InterviewModal = ({ user, applications, onClose, editingInterview }: { use
     try {
       const data = {
         ...formData,
-        date: new Date(formData.date).toISOString()
+        date: new Date(formData.date).toISOString(),
       };
 
-      const writePromise = editingInterview
-        ? updateDoc(doc(db, `users/${user.uid}/interviews`, editingInterview.id), data)
-        : addDoc(collection(db, `users/${user.uid}/interviews`), data);
-
+      if (editingInterview) {
+        await updateInterview(user.uid, editingInterview.id, data);
+        toast.success('Interview updated.');
+      } else {
+        await createInterview(user.uid, data);
+        toast.success('Interview scheduled.');
+      }
       onClose();
-      await writePromise;
-    } catch (error) {
-      handleFirestoreError(error, editingInterview ? OperationType.UPDATE : OperationType.CREATE, `users/${user.uid}/interviews`);
+    } catch {
+      toast.error('Failed to save interview. Please try again.');
     }
   };
 
   const handleDelete = async () => {
     if (editingInterview && window.confirm('Delete this interview?')) {
       try {
-        await deleteDoc(doc(db, `users/${user.uid}/interviews`, editingInterview.id));
+        await deleteInterview(user.uid, editingInterview.id);
+        toast.success('Interview deleted.');
         onClose();
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/interviews/${editingInterview.id}`);
+      } catch {
+        toast.error('Failed to delete interview.');
       }
     }
   };
@@ -297,7 +287,7 @@ const InterviewModal = ({ user, applications, onClose, editingInterview }: { use
               <select 
                 className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
                 value={formData.type}
-                onChange={e => setFormData({ ...formData, type: e.target.value as any })}
+                onChange={e => setFormData({ ...formData, type: e.target.value as Interview['type'] })}
               >
                 <option value="Phone Screen">Phone Screen</option>
                 <option value="Video Interview">Video Interview</option>

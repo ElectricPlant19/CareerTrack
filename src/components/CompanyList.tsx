@@ -1,26 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { db, collection, onSnapshot, query, addDoc, updateDoc, deleteDoc, doc, handleFirestoreError, OperationType } from '../firebase';
+import React, { useState } from 'react';
 import { Company, UserProfile } from '../types';
-import { Building2, Plus, Search, MapPin, Globe, MoreVertical, Trash2, Edit2, X, Save } from 'lucide-react';
+import { useCompanies } from '../hooks/useCompanies';
+import { createCompany, updateCompany, deleteCompany } from '../services/companyService';
+import { useToast } from '../contexts/ToastContext';
+import { Building2, Plus, Search, MapPin, Globe, MoreVertical, Trash2, X, Save } from 'lucide-react';
 
 export default function CompanyList({ user }: { user: UserProfile }) {
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { companies, loading } = useCompanies(user.uid);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-
-  useEffect(() => {
-    const q = query(collection(db, `users/${user.uid}/companies`));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setCompanies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Company)));
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/companies`);
-    });
-
-    return () => unsubscribe();
-  }, [user.uid]);
 
   const filteredCompanies = companies.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -123,6 +112,7 @@ export default function CompanyList({ user }: { user: UserProfile }) {
 }
 
 const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, onClose: () => void, editingCompany: Company | null }) => {
+  const toast = useToast();
   const [formData, setFormData] = useState({
     name: editingCompany?.name || '',
     size: editingCompany?.size || '',
@@ -135,24 +125,27 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const writePromise = editingCompany
-        ? updateDoc(doc(db, `users/${user.uid}/companies`, editingCompany.id), formData)
-        : addDoc(collection(db, `users/${user.uid}/companies`), formData);
-
+      if (editingCompany) {
+        await updateCompany(user.uid, editingCompany.id, formData);
+        toast.success('Company updated.');
+      } else {
+        await createCompany(user.uid, formData);
+        toast.success('Company added.');
+      }
       onClose();
-      await writePromise;
-    } catch (error) {
-      handleFirestoreError(error, editingCompany ? OperationType.UPDATE : OperationType.CREATE, `users/${user.uid}/companies`);
+    } catch {
+      toast.error('Failed to save company. Please try again.');
     }
   };
 
   const handleDelete = async () => {
     if (editingCompany && window.confirm('Delete this company?')) {
       try {
-        await deleteDoc(doc(db, `users/${user.uid}/companies`, editingCompany.id));
+        await deleteCompany(user.uid, editingCompany.id);
+        toast.success('Company deleted.');
         onClose();
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/companies/${editingCompany.id}`);
+      } catch {
+        toast.error('Failed to delete company.');
       }
     }
   };

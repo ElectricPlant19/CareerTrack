@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { db, collection, onSnapshot, query, where, addDoc, updateDoc, deleteDoc, doc, handleFirestoreError, OperationType } from '../firebase';
+import React, { useState } from 'react';
 import { Application, UserProfile, ApplicationStatus } from '../types';
+import { useApplications } from '../hooks/useApplications';
+import { deleteApplication } from '../services/applicationService';
+import { useToast } from '../contexts/ToastContext';
+import { STAGE_COLORS } from '../constants';
 import { 
   Search, 
   Filter, 
@@ -17,36 +20,13 @@ import {
 } from 'lucide-react';
 import ApplicationForm from './ApplicationForm';
 
-const STAGE_COLORS: Record<ApplicationStatus, string> = {
-  'Bookmarked': 'bg-gray-100 text-gray-600',
-  'Applied': 'bg-blue-100 text-blue-600',
-  'Phone Screen': 'bg-indigo-100 text-indigo-600',
-  'Interview': 'bg-purple-100 text-purple-600',
-  'Offer': 'bg-green-100 text-green-600',
-  'Rejected': 'bg-red-100 text-red-600',
-  'Archived': 'bg-gray-200 text-gray-500'
-};
-
 export default function ApplicationList({ user }: { user: UserProfile }) {
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { applications, loading } = useApplications(user.uid);
+  const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | 'All'>('All');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<Application | null>(null);
-
-  useEffect(() => {
-    const q = query(collection(db, `users/${user.uid}/applications`));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const apps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Application));
-      setApplications(apps);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/applications`);
-    });
-
-    return () => unsubscribe();
-  }, [user.uid]);
 
   const filteredApps = applications.filter(app => {
     const matchesSearch = 
@@ -59,9 +39,10 @@ export default function ApplicationList({ user }: { user: UserProfile }) {
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this application?')) {
       try {
-        await deleteDoc(doc(db, `users/${user.uid}/applications`, id));
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/applications/${id}`);
+        await deleteApplication(user.uid, id);
+        toast.success('Application deleted.');
+      } catch {
+        toast.error('Failed to delete application. Please try again.');
       }
     }
   };
@@ -103,7 +84,7 @@ export default function ApplicationList({ user }: { user: UserProfile }) {
           <select 
             className="bg-transparent border-none focus:ring-0 text-sm font-medium"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as any)}
+            onChange={(e) => setStatusFilter(e.target.value as ApplicationStatus | 'All')}
           >
             <option value="All">All Statuses</option>
             <option value="Bookmarked">Bookmarked</option>

@@ -3,6 +3,7 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signO
 import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocFromServer } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
+import type { Document, DocumentType, DocumentCategory } from './types';
 
 const app = initializeApp(firebaseConfig);
 // Use the named Firestore database
@@ -97,49 +98,46 @@ async function testConnection() {
 }
 testConnection();
 
+type DocumentUploadInput = {
+  id: string;
+  name: string;
+  type: DocumentType;
+  category: DocumentCategory;
+  tags: string[];
+  notes?: string;
+  applicationId?: string;
+};
+
 // Document management functions
-export async function uploadDocument(file: File, userId: string, documentData: any) {
+export async function uploadDocument(file: File, userId: string, documentData: DocumentUploadInput) {
   try {
-    console.log('Uploading document for user:', userId);
-    console.log('Document data:', documentData);
-    
     const storagePath = `users/${userId}/documents/${Date.now()}_${file.name}`;
     const storageRef = ref(storage, storagePath);
     await uploadBytes(storageRef, file);
     const fileUrl = await getDownloadURL(storageRef);
-    console.log('File uploaded to storage:', fileUrl);
-    
+
     const docRef = doc(db, 'users', userId, 'documents', documentData.id);
-    
-    // Filter out undefined values
-    let filteredData: any = {
+
+    const filteredData: Omit<Document, never> = {
       id: documentData.id,
       name: documentData.name,
       type: documentData.type,
       category: documentData.category,
       tags: documentData.tags || [],
-      notes: documentData.notes || null,
+      notes: documentData.notes || undefined,
       fileUrl,
       storagePath,
       fileSize: file.size,
       mimeType: file.type,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      ...(documentData.applicationId ? { applicationId: documentData.applicationId } : {}),
     };
-    
-    // Only include applicationId if it exists
-    if (documentData.applicationId) {
-      filteredData.applicationId = documentData.applicationId;
-    }
-    
-    console.log('Saving document to Firestore:', filteredData);
-    
+
     await setDoc(docRef, filteredData);
-    console.log('Document saved successfully');
-    
+
     return { id: documentData.id, fileUrl, storagePath };
   } catch (error) {
-    console.error('Upload error:', error);
     throw handleFirestoreError(error, OperationType.CREATE, `users/${userId}/documents`);
   }
 }
@@ -153,21 +151,23 @@ export async function deleteDocument(documentId: string, userId: string, storage
   }
 }
 
-export async function updateDocument(documentId: string, userId: string, updates: any) {
+type DocumentUpdateInput = Partial<Pick<Document, 'name' | 'type' | 'category' | 'tags' | 'notes' | 'applicationId' | 'fileUrl' | 'storagePath' | 'fileSize' | 'mimeType'>>;
+
+export async function updateDocument(documentId: string, userId: string, updates: DocumentUpdateInput) {
   try {
     await updateDoc(doc(db, 'users', userId, 'documents', documentId), {
       ...updates,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     });
   } catch (error) {
     throw handleFirestoreError(error, OperationType.UPDATE, `users/${userId}/documents/${documentId}`);
   }
 }
 
-export function listenToDocuments(userId: string, callback: (documents: any[]) => void) {
+export function listenToDocuments(userId: string, callback: (documents: Document[]) => void) {
   const q = query(collection(db, 'users', userId, 'documents'));
   return onSnapshot(q, (snapshot) => {
-    const documents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const documents = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Document));
     callback(documents);
   });
 }

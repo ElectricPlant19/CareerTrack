@@ -1,33 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { db, collection, onSnapshot, query, addDoc, updateDoc, deleteDoc, doc, handleFirestoreError, OperationType } from '../firebase';
+import React, { useState } from 'react';
 import { Contact, Company, UserProfile } from '../types';
-import { Users, Plus, Search, Mail, Phone, Linkedin, MoreVertical, Trash2, Edit2, X, Save, Building2 } from 'lucide-react';
+import { useContacts } from '../hooks/useContacts';
+import { useCompanies } from '../hooks/useCompanies';
+import { createContact, updateContact, deleteContact } from '../services/contactService';
+import { useToast } from '../contexts/ToastContext';
+import { Users, Plus, Search, Mail, Phone, Linkedin, MoreVertical, Trash2, X, Save, Building2 } from 'lucide-react';
 
 export default function ContactList({ user }: { user: UserProfile }) {
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { contacts, loading } = useContacts(user.uid);
+  const { companies } = useCompanies(user.uid);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-
-  useEffect(() => {
-    const qContacts = query(collection(db, `users/${user.uid}/contacts`));
-    const unsubscribeContacts = onSnapshot(qContacts, (snapshot) => {
-      setContacts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contact)));
-      setLoading(false);
-    });
-
-    const qCompanies = query(collection(db, `users/${user.uid}/companies`));
-    const unsubscribeCompanies = onSnapshot(qCompanies, (snapshot) => {
-      setCompanies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Company)));
-    });
-
-    return () => {
-      unsubscribeContacts();
-      unsubscribeCompanies();
-    };
-  }, [user.uid]);
 
   const filteredContacts = contacts.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -145,6 +129,7 @@ export default function ContactList({ user }: { user: UserProfile }) {
 }
 
 const ContactModal = ({ user, companies, onClose, editingContact }: { user: UserProfile, companies: Company[], onClose: () => void, editingContact: Contact | null }) => {
+  const toast = useToast();
   const [formData, setFormData] = useState({
     name: editingContact?.name || '',
     email: editingContact?.email || '',
@@ -157,24 +142,27 @@ const ContactModal = ({ user, companies, onClose, editingContact }: { user: User
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const writePromise = editingContact
-        ? updateDoc(doc(db, `users/${user.uid}/contacts`, editingContact.id), formData)
-        : addDoc(collection(db, `users/${user.uid}/contacts`), formData);
-
+      if (editingContact) {
+        await updateContact(user.uid, editingContact.id, formData);
+        toast.success('Contact updated.');
+      } else {
+        await createContact(user.uid, formData);
+        toast.success('Contact added.');
+      }
       onClose();
-      await writePromise;
-    } catch (error) {
-      handleFirestoreError(error, editingContact ? OperationType.UPDATE : OperationType.CREATE, `users/${user.uid}/contacts`);
+    } catch {
+      toast.error('Failed to save contact. Please try again.');
     }
   };
 
   const handleDelete = async () => {
     if (editingContact && window.confirm('Delete this contact?')) {
       try {
-        await deleteDoc(doc(db, `users/${user.uid}/contacts`, editingContact.id));
+        await deleteContact(user.uid, editingContact.id);
+        toast.success('Contact deleted.');
         onClose();
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/contacts/${editingContact.id}`);
+      } catch {
+        toast.error('Failed to delete contact.');
       }
     }
   };
