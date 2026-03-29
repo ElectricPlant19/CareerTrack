@@ -26,6 +26,7 @@ import TaskList from './components/TaskList';
 import CompanyList from './components/CompanyList';
 import ContactList from './components/ContactList';
 import DocumentsList from './components/DocumentsList';
+import LandingPage from './components/LandingPage';
 
 const SidebarItem = ({ to, icon: Icon, label, active }: { to: string, icon: React.ElementType, label: string, active: boolean }) => (
   <Link 
@@ -253,8 +254,8 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
-        <Route 
-          path="/*" 
+        <Route
+          path="/*"
           element={
             user ? (
               <Layout user={user}>
@@ -270,9 +271,12 @@ export default function App() {
                 </Routes>
               </Layout>
             ) : (
-              <Navigate to="/login" />
+              <Routes>
+                <Route path="/" element={<LandingPage />} />
+                <Route path="*" element={<Navigate to="/login" />} />
+              </Routes>
             )
-          } 
+          }
         />
       </Routes>
     </Router>
