@@ -10,17 +10,21 @@ const STAGES: ApplicationStatus[] = APPLICATION_STATUSES;
 
 const ApplicationCard = ({
   app,
+  effectiveStatus,
   onStatusChange,
-  onDragStart
+  onDragStart,
+  isPending
 }: {
   app: Application;
+  effectiveStatus: ApplicationStatus;
   onStatusChange: (status: ApplicationStatus) => void;
   onDragStart: (appId: string) => void;
+  isPending: boolean;
 }) => (
-  <motion.div 
+  <motion.div
     layout
     initial={{ opacity: 0, y: 10 }}
-    animate={{ opacity: 1, y: 0 }}
+    animate={{ opacity: isPending ? 0.6 : 1, y: 0 }}
     draggable
     onDragStart={() => onDragStart(app.id)}
     className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing mb-3 group"
@@ -32,7 +36,7 @@ const ApplicationCard = ({
       </button>
     </div>
     <p className="text-xs text-gray-500 font-medium mb-3">{app.companyName}</p>
-    
+
     <div className="flex flex-wrap gap-1 mb-4">
       {app.tags.slice(0, 2).map(tag => (
         <span key={tag} className="text-[10px] px-2 py-0.5 bg-gray-50 text-gray-500 rounded-full border border-gray-100">
@@ -61,9 +65,10 @@ const ApplicationCard = ({
     </div>
     <div className="mt-3">
       <select
-        value={app.status}
+        value={effectiveStatus}
         onChange={(e) => onStatusChange(e.target.value as ApplicationStatus)}
-        className="w-full text-xs bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5"
+        disabled={isPending}
+        className="w-full text-xs bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 disabled:opacity-60"
       >
         {STAGES.map((status) => (
           <option key={status} value={status}>
@@ -79,15 +84,55 @@ export default function KanbanBoard({ user, applications }: { user: UserProfile,
   const toast = useToast();
   const [draggedAppId, setDraggedAppId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<ApplicationStatus | null>(null);
+  // Optimistic status overrides: appId -> optimistic status
+  const [optimisticStatus, setOptimisticStatus] = useState<Record<string, ApplicationStatus>>({});
+  // Track which app IDs have an in-flight update
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+
+  const getEffectiveStatus = (app: Application): ApplicationStatus =>
+    optimisticStatus[app.id] ?? app.status;
 
   const handleStatusChange = async (appId: string, newStatus: ApplicationStatus) => {
     const currentApp = applications.find((app) => app.id === appId);
-    if (!currentApp || currentApp.status === newStatus) return;
+    if (!currentApp || getEffectiveStatus(currentApp) === newStatus) return;
+
+    const prevStatus = getEffectiveStatus(currentApp);
+
+    // Optimistic update
+    setOptimisticStatus(prev => ({ ...prev, [appId]: newStatus }));
+    setPendingIds(prev => new Set(prev).add(appId));
 
     try {
       await updateApplicationStatus(user.uid, appId, newStatus, currentApp);
     } catch {
+      // Rollback
+      setOptimisticStatus(prev => {
+        const next = { ...prev };
+        if (next[appId] === newStatus) {
+          // Only rollback if we haven't overwritten with another optimistic update
+          if (prevStatus === currentApp.status) {
+            delete next[appId];
+          } else {
+            next[appId] = prevStatus;
+          }
+        }
+        return next;
+      });
       toast.error('Failed to update status. Please try again.');
+    } finally {
+      setPendingIds(prev => {
+        const next = new Set(prev);
+        next.delete(appId);
+        return next;
+      });
+      // Clean up override once real data propagates (slight delay)
+      setTimeout(() => {
+        setOptimisticStatus(prev => {
+          const next = { ...prev };
+          delete next[appId];
+          return next;
+        });
+      }, 1500);
     }
   };
 
@@ -100,55 +145,58 @@ export default function KanbanBoard({ user, applications }: { user: UserProfile,
 
   return (
     <div className="flex gap-6 overflow-x-auto pb-6 -mx-6 px-6 scrollbar-hide">
-      {STAGES.filter(s => s !== 'Archived').map(stage => (
-        <div key={stage} className="flex-shrink-0 w-72">
-          <div className="flex items-center justify-between mb-4 px-2">
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-sm">{stage}</h3>
-              <span className="bg-gray-100 text-gray-500 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                {applications.filter(a => a.status === stage).length}
-              </span>
+      {STAGES.filter(s => s !== 'Archived').map(stage => {
+        const stageApps = applications.filter(app => getEffectiveStatus(app) === stage);
+        return (
+          <div key={stage} className="flex-shrink-0 w-72">
+            <div className="flex items-center justify-between mb-4 px-2">
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm">{stage}</h3>
+                <span className="bg-gray-100 text-gray-500 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  {stageApps.length}
+                </span>
+              </div>
+              <button className="text-gray-400 hover:text-black transition-colors p-1 hover:bg-gray-100 rounded-lg">
+                <Plus size={16} />
+              </button>
             </div>
-            <button className="text-gray-400 hover:text-black transition-colors p-1 hover:bg-gray-100 rounded-lg">
-              <Plus size={16} />
-            </button>
-          </div>
-          
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOverStage(stage);
-            }}
-            onDragLeave={() => {
-              if (dragOverStage === stage) setDragOverStage(null);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              handleDropOnStage(stage);
-            }}
-            className={`min-h-[500px] bg-gray-50/50 rounded-3xl p-3 border border-dashed transition-colors ${
-              dragOverStage === stage ? 'border-black bg-gray-100/70' : 'border-gray-200'
-            }`}
-          >
-            {applications
-              .filter(app => app.status === stage)
-              .map(app => (
+
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOverStage(stage);
+              }}
+              onDragLeave={() => {
+                if (dragOverStage === stage) setDragOverStage(null);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleDropOnStage(stage);
+              }}
+              className={`min-h-[500px] bg-gray-50/50 rounded-3xl p-3 border border-dashed transition-colors ${
+                dragOverStage === stage ? 'border-black bg-gray-100/70' : 'border-gray-200'
+              }`}
+            >
+              {stageApps.map(app => (
                 <ApplicationCard
                   key={app.id}
                   app={app}
+                  effectiveStatus={getEffectiveStatus(app)}
                   onStatusChange={(newStatus) => handleStatusChange(app.id, newStatus)}
                   onDragStart={(appId) => setDraggedAppId(appId)}
+                  isPending={pendingIds.has(app.id)}
                 />
               ))}
-            
-            {applications.filter(a => a.status === stage).length === 0 && (
-              <div className="flex flex-col items-center justify-center h-32 text-gray-300">
-                <p className="text-xs font-medium">No applications</p>
-              </div>
-            )}
+
+              {stageApps.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-32 text-gray-300">
+                  <p className="text-xs font-medium">No applications</p>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

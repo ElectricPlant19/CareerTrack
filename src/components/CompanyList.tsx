@@ -3,7 +3,21 @@ import { Company, UserProfile } from '../types';
 import { db, getDocs, query, collection, limit, handleFirestoreError, OperationType } from '../firebase';
 import { createCompany, updateCompany, deleteCompany } from '../services/companyService';
 import { useToast } from '../contexts/ToastContext';
-import { Building2, Plus, Search, MapPin, Globe, MoreVertical, Trash2, X, Save, RefreshCw } from 'lucide-react';
+import {
+  Building2, Plus, Search, MapPin, Globe, Trash2, X, Save, RefreshCw, Filter, ArrowUpDown, AlertCircle, Edit2
+} from 'lucide-react';
+
+type SortBy = 'name' | 'industry';
+
+function validateUrl(url: string): boolean {
+  if (!url) return true;
+  try {
+    const u = new URL(url.startsWith('http') ? url : `https://${url}`);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 export default function CompanyList({ user }: { user: UserProfile }) {
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -11,6 +25,8 @@ export default function CompanyList({ user }: { user: UserProfile }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [industryFilter, setIndustryFilter] = useState('All');
+  const [sortBy, setSortBy] = useState<SortBy>('name');
 
   const fetchData = async () => {
     setLoading(true);
@@ -28,10 +44,32 @@ export default function CompanyList({ user }: { user: UserProfile }) {
     fetchData();
   }, [user.uid]);
 
-  const filteredCompanies = companies.filter(c =>
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.industry?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const uniqueIndustries = Array.from(new Set(companies.map(c => c.industry).filter(Boolean))).sort() as string[];
+
+  const filteredCompanies = companies
+    .filter(c => {
+      const matchesSearch =
+        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.industry?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesIndustry = industryFilter === 'All' || c.industry === industryFilter;
+      return matchesSearch && matchesIndustry;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'industry') return (a.industry || '').localeCompare(b.industry || '');
+      return a.name.localeCompare(b.name);
+    });
+
+  const handleDeleteDirect = async (company: Company, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm(`Delete "${company.name}"?`)) {
+      try {
+        await deleteCompany(user.uid, company.id);
+        fetchData();
+      } catch {
+        // will handle in modal flow
+      }
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -58,8 +96,8 @@ export default function CompanyList({ user }: { user: UserProfile }) {
         </button>
       </div>
 
-      <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
-        <div className="relative">
+      <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex flex-col md:flex-row gap-3">
+        <div className="flex-1 relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
           <input
             type="text"
@@ -68,6 +106,30 @@ export default function CompanyList({ user }: { user: UserProfile }) {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
+        </div>
+        {uniqueIndustries.length > 0 && (
+          <div className="flex items-center gap-2 bg-gray-50 px-4 py-3 rounded-2xl">
+            <Filter size={16} className="text-gray-400" />
+            <select
+              className="bg-transparent border-none focus:ring-0 text-sm font-medium"
+              value={industryFilter}
+              onChange={(e) => setIndustryFilter(e.target.value)}
+            >
+              <option value="All">All Industries</option>
+              {uniqueIndustries.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          </div>
+        )}
+        <div className="flex items-center gap-2 bg-gray-50 px-4 py-3 rounded-2xl">
+          <ArrowUpDown size={16} className="text-gray-400" />
+          <select
+            className="bg-transparent border-none focus:ring-0 text-sm font-medium"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortBy)}
+          >
+            <option value="name">Name (A–Z)</option>
+            <option value="industry">Industry</option>
+          </select>
         </div>
       </div>
 
@@ -78,12 +140,22 @@ export default function CompanyList({ user }: { user: UserProfile }) {
               <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-500">
                 <Building2 size={24} />
               </div>
-              <button
-                onClick={() => { setEditingCompany(company); setIsModalOpen(true); }}
-                className="p-2 text-gray-400 hover:text-black hover:bg-gray-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-              >
-                <MoreVertical size={20} />
-              </button>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => { setEditingCompany(company); setIsModalOpen(true); }}
+                  className="p-2 text-gray-400 hover:text-black hover:bg-gray-50 rounded-xl transition-all"
+                  title="Edit"
+                >
+                  <Edit2 size={16} />
+                </button>
+                <button
+                  onClick={(e) => handleDeleteDirect(company, e)}
+                  className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                  title="Delete"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
             <h3 className="text-lg font-bold mb-1">{company.name}</h3>
             <p className="text-sm text-gray-500 font-medium mb-4">{company.industry || 'No industry specified'}</p>
@@ -98,9 +170,20 @@ export default function CompanyList({ user }: { user: UserProfile }) {
               {company.website && (
                 <div className="flex items-center gap-2 text-xs text-gray-500">
                   <Globe size={14} className="text-gray-400" />
-                  <a href={company.website.startsWith('http') ? company.website : `https://${company.website}`} target="_blank" rel="noopener noreferrer" className="hover:text-black underline underline-offset-2">
+                  <a
+                    href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-black underline underline-offset-2 truncate"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {company.website.replace(/^https?:\/\//, '')}
                   </a>
+                </div>
+              )}
+              {company.size && (
+                <div className="text-xs text-gray-400 font-medium">
+                  {company.size} employees
                 </div>
               )}
             </div>
@@ -115,13 +198,17 @@ export default function CompanyList({ user }: { user: UserProfile }) {
         {filteredCompanies.length === 0 && !loading && (
           <div className="col-span-full py-20 text-center text-gray-400">
             <Building2 size={64} className="mx-auto mb-4 opacity-10" />
-            <p className="text-lg font-medium">No companies found.</p>
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="mt-4 text-black font-bold underline underline-offset-4"
-            >
-              Add your first company
-            </button>
+            <p className="text-lg font-medium">
+              {searchTerm || industryFilter !== 'All' ? 'No companies match your filters.' : 'No companies found.'}
+            </p>
+            {!searchTerm && industryFilter === 'All' && (
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="mt-4 text-black font-bold underline underline-offset-4"
+              >
+                Add your first company
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -147,9 +234,20 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
     website: editingCompany?.website || '',
     notes: editingCompany?.notes || ''
   });
+  const [urlError, setUrlError] = useState('');
+
+  const handleWebsiteChange = (value: string) => {
+    setFormData({ ...formData, website: value });
+    if (value && !validateUrl(value)) {
+      setUrlError('Please enter a valid URL (e.g. acme.com or https://acme.com).');
+    } else {
+      setUrlError('');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (urlError) return;
     try {
       if (editingCompany) {
         await updateCompany(user.uid, editingCompany.id, formData);
@@ -225,7 +323,7 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
                 className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
                 value={formData.size}
                 onChange={e => setFormData({ ...formData, size: e.target.value })}
-                placeholder="e.g. 500-1000"
+                placeholder="e.g. 500–1000"
               />
             </div>
           </div>
@@ -243,11 +341,17 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
             <label className="text-sm font-bold text-gray-700">Website</label>
             <input
               type="text"
-              className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
+              className={`w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 transition-all ${urlError ? 'ring-2 ring-red-300' : 'focus:ring-black/5'}`}
               value={formData.website}
-              onChange={e => setFormData({ ...formData, website: e.target.value })}
+              onChange={e => handleWebsiteChange(e.target.value)}
               placeholder="e.g. acme.com"
             />
+            {urlError && (
+              <p className="flex items-center gap-1 text-xs text-red-600">
+                <AlertCircle size={12} />
+                {urlError}
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">Notes</label>
@@ -262,7 +366,8 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
           <div className="pt-4 sticky bottom-0 bg-white pb-2">
             <button
               type="submit"
-              className="w-full flex items-center justify-center gap-2 bg-black text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-black/10"
+              disabled={!!urlError}
+              className="w-full flex items-center justify-center gap-2 bg-black text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-black/10 disabled:opacity-60"
             >
               <Save size={20} />
               {editingCompany ? 'Update Company' : 'Save Company'}
