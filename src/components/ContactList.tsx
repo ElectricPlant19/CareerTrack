@@ -1,19 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Contact, Company, UserProfile } from '../types';
-import { useContacts } from '../hooks/useContacts';
+import { db, getDocs, query, collection, limit, handleFirestoreError, OperationType } from '../firebase';
 import { useCompanies } from '../hooks/useCompanies';
 import { createContact, updateContact, deleteContact } from '../services/contactService';
 import { useToast } from '../contexts/ToastContext';
-import { Users, Plus, Search, Mail, Phone, Linkedin, MoreVertical, Trash2, X, Save, Building2 } from 'lucide-react';
+import { Users, Plus, Search, Mail, Phone, Linkedin, MoreVertical, Trash2, X, Save, Building2, RefreshCw } from 'lucide-react';
 
 export default function ContactList({ user }: { user: UserProfile }) {
-  const { contacts, loading } = useContacts(user.uid);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
   const { companies } = useCompanies(user.uid);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredContacts = contacts.filter(c => 
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const snapshot = await getDocs(query(collection(db, `users/${user.uid}/contacts`), limit(100)));
+      setContacts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contact)));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/contacts`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [user.uid]);
+
+  const filteredContacts = contacts.filter(c =>
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -22,10 +39,19 @@ export default function ContactList({ user }: { user: UserProfile }) {
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Contacts</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold tracking-tight">Contacts</h1>
+            <button
+              onClick={fetchData}
+              className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-lg"
+              title="Refresh"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
           <p className="text-gray-500 mt-1">Manage recruiters, hiring managers, and networking contacts.</p>
         </div>
-        <button 
+        <button
           onClick={() => { setEditingContact(null); setIsModalOpen(true); }}
           className="flex items-center gap-2 bg-black text-white px-6 py-3 rounded-2xl font-semibold hover:bg-gray-800 transition-all shadow-lg shadow-black/10 self-start"
         >
@@ -37,9 +63,9 @@ export default function ContactList({ user }: { user: UserProfile }) {
       <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-          <input 
-            type="text" 
-            placeholder="Search contacts by name or email..." 
+          <input
+            type="text"
+            placeholder="Search contacts by name or email..."
             className="w-full pl-12 pr-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all text-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -56,7 +82,7 @@ export default function ContactList({ user }: { user: UserProfile }) {
                 <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-500">
                   <Users size={24} />
                 </div>
-                <button 
+                <button
                   onClick={() => { setEditingContact(contact); setIsModalOpen(true); }}
                   className="p-2 text-gray-400 hover:text-black hover:bg-gray-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
                 >
@@ -70,7 +96,7 @@ export default function ContactList({ user }: { user: UserProfile }) {
                   {company.name}
                 </div>
               )}
-              
+
               <div className="space-y-3 mb-6">
                 {contact.email && (
                   <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -106,7 +132,7 @@ export default function ContactList({ user }: { user: UserProfile }) {
           <div className="col-span-full py-20 text-center text-gray-400">
             <Users size={64} className="mx-auto mb-4 opacity-10" />
             <p className="text-lg font-medium">No contacts found.</p>
-            <button 
+            <button
               onClick={() => setIsModalOpen(true)}
               className="mt-4 text-black font-bold underline underline-offset-4"
             >
@@ -117,10 +143,10 @@ export default function ContactList({ user }: { user: UserProfile }) {
       </div>
 
       {isModalOpen && (
-        <ContactModal 
-          user={user} 
+        <ContactModal
+          user={user}
           companies={companies}
-          onClose={() => { setIsModalOpen(false); setEditingContact(null); }} 
+          onClose={() => { setIsModalOpen(false); setEditingContact(null); fetchData(); }}
           editingContact={editingContact}
         />
       )}
@@ -189,9 +215,9 @@ const ContactModal = ({ user, companies, onClose, editingContact }: { user: User
         <form onSubmit={handleSubmit} className="p-8 overflow-y-auto space-y-6">
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">Full Name *</label>
-            <input 
+            <input
               required
-              type="text" 
+              type="text"
               className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
               value={formData.name}
               onChange={e => setFormData({ ...formData, name: e.target.value })}
@@ -200,7 +226,7 @@ const ContactModal = ({ user, companies, onClose, editingContact }: { user: User
           </div>
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">Company</label>
-            <select 
+            <select
               className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
               value={formData.companyId}
               onChange={e => setFormData({ ...formData, companyId: e.target.value })}
@@ -214,8 +240,8 @@ const ContactModal = ({ user, companies, onClose, editingContact }: { user: User
           <div className="grid grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-sm font-bold text-gray-700">Email</label>
-              <input 
-                type="email" 
+              <input
+                type="email"
                 className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
                 value={formData.email}
                 onChange={e => setFormData({ ...formData, email: e.target.value })}
@@ -224,8 +250,8 @@ const ContactModal = ({ user, companies, onClose, editingContact }: { user: User
             </div>
             <div className="space-y-2">
               <label className="text-sm font-bold text-gray-700">Phone</label>
-              <input 
-                type="tel" 
+              <input
+                type="tel"
                 className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
                 value={formData.phone}
                 onChange={e => setFormData({ ...formData, phone: e.target.value })}
@@ -235,8 +261,8 @@ const ContactModal = ({ user, companies, onClose, editingContact }: { user: User
           </div>
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">LinkedIn URL</label>
-            <input 
-              type="url" 
+            <input
+              type="url"
               className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
               value={formData.linkedInUrl}
               onChange={e => setFormData({ ...formData, linkedInUrl: e.target.value })}
@@ -245,7 +271,7 @@ const ContactModal = ({ user, companies, onClose, editingContact }: { user: User
           </div>
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">Notes</label>
-            <textarea 
+            <textarea
               className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all min-h-[100px]"
               value={formData.notes}
               onChange={e => setFormData({ ...formData, notes: e.target.value })}
@@ -254,7 +280,7 @@ const ContactModal = ({ user, companies, onClose, editingContact }: { user: User
           </div>
 
           <div className="pt-4 sticky bottom-0 bg-white pb-2">
-            <button 
+            <button
               type="submit"
               className="w-full flex items-center justify-center gap-2 bg-black text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-black/10"
             >

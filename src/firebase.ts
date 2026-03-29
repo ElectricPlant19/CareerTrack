@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocFromServer, limit } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 import type { Document, DocumentType, DocumentCategory } from './types';
@@ -30,6 +30,7 @@ export {
   updateDoc,
   deleteDoc,
   getDocFromServer,
+  limit,
   ref,
   uploadBytes,
   getDownloadURL,
@@ -170,4 +171,10 @@ export function listenToDocuments(userId: string, callback: (documents: Document
     const documents = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Document));
     callback(documents);
   });
+}
+
+export async function getDocuments(userId: string): Promise<Document[]> {
+  const q = query(collection(db, 'users', userId, 'documents'), limit(100));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Document));
 }

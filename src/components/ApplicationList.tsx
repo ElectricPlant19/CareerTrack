@@ -1,35 +1,50 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Application, UserProfile, ApplicationStatus } from '../types';
-import { useApplications } from '../hooks/useApplications';
+import { db, getDocs, query, collection, limit, handleFirestoreError, OperationType } from '../firebase';
 import { deleteApplication } from '../services/applicationService';
 import { useToast } from '../contexts/ToastContext';
 import { STAGE_COLORS } from '../constants';
-import { 
-  Search, 
-  Filter, 
-  Plus, 
-  MoreVertical, 
-  ExternalLink, 
-  Trash2, 
-  Edit2, 
-  ChevronDown,
+import {
+  Search,
+  Filter,
+  Plus,
+  Trash2,
+  Edit2,
   Briefcase,
   Building2,
   Calendar,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
 import ApplicationForm from './ApplicationForm';
 
 export default function ApplicationList({ user }: { user: UserProfile }) {
-  const { applications, loading } = useApplications(user.uid);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
   const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | 'All'>('All');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<Application | null>(null);
 
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const snapshot = await getDocs(query(collection(db, `users/${user.uid}/applications`), limit(100)));
+      setApplications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Application)));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/applications`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [user.uid]);
+
   const filteredApps = applications.filter(app => {
-    const matchesSearch = 
+    const matchesSearch =
       app.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       app.position.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'All' || app.status === statusFilter;
@@ -41,6 +56,7 @@ export default function ApplicationList({ user }: { user: UserProfile }) {
       try {
         await deleteApplication(user.uid, id);
         toast.success('Application deleted.');
+        fetchData();
       } catch {
         toast.error('Failed to delete application. Please try again.');
       }
@@ -56,10 +72,19 @@ export default function ApplicationList({ user }: { user: UserProfile }) {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Applications</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold tracking-tight">Applications</h1>
+            <button
+              onClick={fetchData}
+              className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-lg"
+              title="Refresh"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
           <p className="text-gray-500 mt-1">Manage and track all your job opportunities.</p>
         </div>
-        <button 
+        <button
           onClick={() => { setEditingApp(null); setIsFormOpen(true); }}
           className="flex items-center gap-2 bg-black text-white px-6 py-3 rounded-2xl font-semibold hover:bg-gray-800 transition-all shadow-lg shadow-black/10 self-start"
         >
@@ -71,9 +96,9 @@ export default function ApplicationList({ user }: { user: UserProfile }) {
       <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex flex-col md:flex-row gap-4">
         <div className="flex-1 relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-          <input 
-            type="text" 
-            placeholder="Search by company or position..." 
+          <input
+            type="text"
+            placeholder="Search by company or position..."
             className="w-full pl-12 pr-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all text-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -81,7 +106,7 @@ export default function ApplicationList({ user }: { user: UserProfile }) {
         </div>
         <div className="flex items-center gap-2 bg-gray-50 px-4 py-3 rounded-2xl border-none">
           <Filter size={18} className="text-gray-400" />
-          <select 
+          <select
             className="bg-transparent border-none focus:ring-0 text-sm font-medium"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as ApplicationStatus | 'All')}
@@ -140,13 +165,13 @@ export default function ApplicationList({ user }: { user: UserProfile }) {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
+                      <button
                         onClick={() => handleEdit(app)}
                         className="p-2 text-gray-400 hover:text-black hover:bg-white rounded-lg shadow-sm transition-all"
                       >
                         <Edit2 size={16} />
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleDelete(app.id)}
                         className="p-2 text-gray-400 hover:text-red-600 hover:bg-white rounded-lg shadow-sm transition-all"
                       >
@@ -172,10 +197,10 @@ export default function ApplicationList({ user }: { user: UserProfile }) {
       </div>
 
       {isFormOpen && (
-        <ApplicationForm 
-          user={user} 
-          onClose={() => { setIsFormOpen(false); setEditingApp(null); }} 
-          editingApp={editingApp} 
+        <ApplicationForm
+          user={user}
+          onClose={() => { setIsFormOpen(false); setEditingApp(null); fetchData(); }}
+          editingApp={editingApp}
         />
       )}
     </div>

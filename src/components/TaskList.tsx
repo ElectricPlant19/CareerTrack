@@ -1,28 +1,53 @@
-import React, { useState } from 'react';
-import { Task, UserProfile } from '../types';
-import { useApplications } from '../hooks/useApplications';
-import { useTasks } from '../hooks/useTasks';
+import React, { useState, useEffect } from 'react';
+import { Task, Application, UserProfile } from '../types';
+import { db, getDocs, query, collection, limit, handleFirestoreError, OperationType } from '../firebase';
 import { createTask, updateTask, deleteTask } from '../services/taskService';
 import { useToast } from '../contexts/ToastContext';
 import { PRIORITY_COLORS } from '../constants';
-import { 
-  CheckSquare, 
-  Plus, 
-  Trash2, 
-  Calendar, 
+import {
+  CheckSquare,
+  Plus,
+  Trash2,
+  Calendar,
   AlertCircle,
-  Search,
-  Filter,
   CheckCircle2,
-  Circle
+  Circle,
+  RefreshCw
 } from 'lucide-react';
 
 export default function TaskList({ user }: { user: UserProfile }) {
-  const { tasks, loading } = useTasks(user.uid);
-  const { applications } = useApplications(user.uid);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
   const toast = useToast();
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedAppId, setSelectedAppId] = useState('');
+
+  const fetchTasks = async () => {
+    setLoading(true);
+    try {
+      const snapshot = await getDocs(query(collection(db, `users/${user.uid}/tasks`), limit(100)));
+      setTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task)));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/tasks`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchApplications = async () => {
+    try {
+      const snapshot = await getDocs(query(collection(db, `users/${user.uid}/applications`), limit(100)));
+      setApplications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Application)));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/applications`);
+    }
+  };
+
+  useEffect(() => {
+    fetchTasks();
+    fetchApplications();
+  }, [user.uid]);
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,6 +64,7 @@ export default function TaskList({ user }: { user: UserProfile }) {
       setNewTaskTitle('');
       setSelectedAppId('');
       toast.success('Task added.');
+      fetchTasks();
     } catch {
       toast.error('Failed to add task. Please try again.');
     }
@@ -47,6 +73,7 @@ export default function TaskList({ user }: { user: UserProfile }) {
   const toggleTask = async (task: Task) => {
     try {
       await updateTask(user.uid, task.id, { completed: !task.completed });
+      fetchTasks();
     } catch {
       toast.error('Failed to update task.');
     }
@@ -55,6 +82,7 @@ export default function TaskList({ user }: { user: UserProfile }) {
   const handleDeleteTask = async (id: string) => {
     try {
       await deleteTask(user.uid, id);
+      fetchTasks();
     } catch {
       toast.error('Failed to delete task.');
     }
@@ -67,7 +95,16 @@ export default function TaskList({ user }: { user: UserProfile }) {
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Tasks & Reminders</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-3xl font-bold tracking-tight">Tasks & Reminders</h1>
+          <button
+            onClick={fetchTasks}
+            className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-lg"
+            title="Refresh"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
         <p className="text-gray-500 mt-1">Stay on top of your follow-ups and preparation tasks.</p>
       </div>
 
@@ -75,15 +112,15 @@ export default function TaskList({ user }: { user: UserProfile }) {
         <form onSubmit={handleAddTask} className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
             <CheckSquare className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-            <input 
-              type="text" 
-              placeholder="What needs to be done? (e.g. Follow up with recruiter)" 
+            <input
+              type="text"
+              placeholder="What needs to be done? (e.g. Follow up with recruiter)"
               className="w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all font-medium"
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
             />
           </div>
-          <select 
+          <select
             className="bg-gray-50 px-4 py-4 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all text-sm font-medium min-w-[200px]"
             value={selectedAppId}
             onChange={(e) => setSelectedAppId(e.target.value)}
@@ -93,7 +130,7 @@ export default function TaskList({ user }: { user: UserProfile }) {
               <option key={app.id} value={app.id}>{app.companyName} - {app.position}</option>
             ))}
           </select>
-          <button 
+          <button
             type="submit"
             className="bg-black text-white px-8 py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-lg shadow-black/10 flex items-center justify-center gap-2"
           >
@@ -111,7 +148,7 @@ export default function TaskList({ user }: { user: UserProfile }) {
               {tasks.filter(t => !t.completed).length} Pending
             </span>
           </div>
-          
+
           <div className="space-y-3">
             {tasks
               .filter(t => !t.completed)
@@ -134,7 +171,7 @@ export default function TaskList({ user }: { user: UserProfile }) {
                     <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${getPriorityColor(task.priority)}`}>
                       {task.priority}
                     </div>
-                    <button 
+                    <button
                       onClick={() => handleDeleteTask(task.id)}
                       className="p-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
                     >
@@ -197,8 +234,8 @@ export default function TaskList({ user }: { user: UserProfile }) {
                 </span>
               </div>
               <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                <div 
-                  className="bg-black h-full transition-all duration-500" 
+                <div
+                  className="bg-black h-full transition-all duration-500"
                   style={{ width: `${tasks.length > 0 ? (tasks.filter(t => t.completed).length / tasks.length) * 100 : 0}%` }}
                 ></div>
               </div>

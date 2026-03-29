@@ -1,17 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Company, UserProfile } from '../types';
-import { useCompanies } from '../hooks/useCompanies';
+import { db, getDocs, query, collection, limit, handleFirestoreError, OperationType } from '../firebase';
 import { createCompany, updateCompany, deleteCompany } from '../services/companyService';
 import { useToast } from '../contexts/ToastContext';
-import { Building2, Plus, Search, MapPin, Globe, MoreVertical, Trash2, X, Save } from 'lucide-react';
+import { Building2, Plus, Search, MapPin, Globe, MoreVertical, Trash2, X, Save, RefreshCw } from 'lucide-react';
 
 export default function CompanyList({ user }: { user: UserProfile }) {
-  const { companies, loading } = useCompanies(user.uid);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredCompanies = companies.filter(c => 
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const snapshot = await getDocs(query(collection(db, `users/${user.uid}/companies`), limit(100)));
+      setCompanies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Company)));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/companies`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [user.uid]);
+
+  const filteredCompanies = companies.filter(c =>
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.industry?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -20,10 +37,19 @@ export default function CompanyList({ user }: { user: UserProfile }) {
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Companies</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold tracking-tight">Companies</h1>
+            <button
+              onClick={fetchData}
+              className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-lg"
+              title="Refresh"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
           <p className="text-gray-500 mt-1">Keep track of company details and research.</p>
         </div>
-        <button 
+        <button
           onClick={() => { setEditingCompany(null); setIsModalOpen(true); }}
           className="flex items-center gap-2 bg-black text-white px-6 py-3 rounded-2xl font-semibold hover:bg-gray-800 transition-all shadow-lg shadow-black/10 self-start"
         >
@@ -35,9 +61,9 @@ export default function CompanyList({ user }: { user: UserProfile }) {
       <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-          <input 
-            type="text" 
-            placeholder="Search companies by name or industry..." 
+          <input
+            type="text"
+            placeholder="Search companies by name or industry..."
             className="w-full pl-12 pr-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all text-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -52,7 +78,7 @@ export default function CompanyList({ user }: { user: UserProfile }) {
               <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-500">
                 <Building2 size={24} />
               </div>
-              <button 
+              <button
                 onClick={() => { setEditingCompany(company); setIsModalOpen(true); }}
                 className="p-2 text-gray-400 hover:text-black hover:bg-gray-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
               >
@@ -61,7 +87,7 @@ export default function CompanyList({ user }: { user: UserProfile }) {
             </div>
             <h3 className="text-lg font-bold mb-1">{company.name}</h3>
             <p className="text-sm text-gray-500 font-medium mb-4">{company.industry || 'No industry specified'}</p>
-            
+
             <div className="space-y-2 mb-6">
               {company.location && (
                 <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -90,7 +116,7 @@ export default function CompanyList({ user }: { user: UserProfile }) {
           <div className="col-span-full py-20 text-center text-gray-400">
             <Building2 size={64} className="mx-auto mb-4 opacity-10" />
             <p className="text-lg font-medium">No companies found.</p>
-            <button 
+            <button
               onClick={() => setIsModalOpen(true)}
               className="mt-4 text-black font-bold underline underline-offset-4"
             >
@@ -101,9 +127,9 @@ export default function CompanyList({ user }: { user: UserProfile }) {
       </div>
 
       {isModalOpen && (
-        <CompanyModal 
-          user={user} 
-          onClose={() => { setIsModalOpen(false); setEditingCompany(null); }} 
+        <CompanyModal
+          user={user}
+          onClose={() => { setIsModalOpen(false); setEditingCompany(null); fetchData(); }}
           editingCompany={editingCompany}
         />
       )}
@@ -172,9 +198,9 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
         <form onSubmit={handleSubmit} className="p-8 overflow-y-auto space-y-6">
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">Company Name *</label>
-            <input 
+            <input
               required
-              type="text" 
+              type="text"
               className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
               value={formData.name}
               onChange={e => setFormData({ ...formData, name: e.target.value })}
@@ -184,8 +210,8 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
           <div className="grid grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-sm font-bold text-gray-700">Industry</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
                 value={formData.industry}
                 onChange={e => setFormData({ ...formData, industry: e.target.value })}
@@ -194,8 +220,8 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
             </div>
             <div className="space-y-2">
               <label className="text-sm font-bold text-gray-700">Size</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
                 value={formData.size}
                 onChange={e => setFormData({ ...formData, size: e.target.value })}
@@ -205,8 +231,8 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
           </div>
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">Location</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
               value={formData.location}
               onChange={e => setFormData({ ...formData, location: e.target.value })}
@@ -215,8 +241,8 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
           </div>
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">Website</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
               value={formData.website}
               onChange={e => setFormData({ ...formData, website: e.target.value })}
@@ -225,7 +251,7 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
           </div>
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">Notes</label>
-            <textarea 
+            <textarea
               className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all min-h-[100px]"
               value={formData.notes}
               onChange={e => setFormData({ ...formData, notes: e.target.value })}
@@ -234,7 +260,7 @@ const CompanyModal = ({ user, onClose, editingCompany }: { user: UserProfile, on
           </div>
 
           <div className="pt-4 sticky bottom-0 bg-white pb-2">
-            <button 
+            <button
               type="submit"
               className="w-full flex items-center justify-center gap-2 bg-black text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-black/10"
             >

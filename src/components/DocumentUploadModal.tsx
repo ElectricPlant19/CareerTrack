@@ -65,6 +65,11 @@ export default function DocumentUploadModal({ user, onClose, editingDoc }: Docum
       return;
     }
 
+    if (file && file.size > 10 * 1024 * 1024) {
+      setError('File size must be 10MB or less');
+      return;
+    }
+
     setLoading(true);
     setError('');
 

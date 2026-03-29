@@ -1,15 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Interview, UserProfile, Application } from '../types';
-import { useInterviews } from '../hooks/useInterviews';
-import { useApplications } from '../hooks/useApplications';
+import { db, getDocs, query, collection, limit, handleFirestoreError, OperationType } from '../firebase';
 import { createInterview, updateInterview, deleteInterview } from '../services/interviewService';
 import { useToast } from '../contexts/ToastContext';
-import { 
-  Calendar as CalendarIcon, 
-  Clock, 
-  MapPin, 
-  Plus, 
-  ChevronLeft, 
+import {
+  Calendar as CalendarIcon,
+  Clock,
+  MapPin,
+  Plus,
+  ChevronLeft,
   ChevronRight,
   Video,
   Phone,
@@ -18,22 +17,59 @@ import {
   Save,
   MoreVertical,
   Trash2,
-  CheckSquare
+  CheckSquare,
+  RefreshCw
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 
 export default function Calendar({ user }: { user: UserProfile }) {
-  const { interviews } = useInterviews(user.uid);
-  const { applications } = useApplications(user.uid);
+  const [interviews, setInterviews] = useState<Interview[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingInterview, setEditingInterview] = useState<Interview | null>(null);
 
+  const fetchInterviews = async () => {
+    setLoading(true);
+    try {
+      const snapshot = await getDocs(query(collection(db, `users/${user.uid}/interviews`), limit(100)));
+      setInterviews(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Interview)));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/interviews`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchApplications = async () => {
+    try {
+      const snapshot = await getDocs(query(collection(db, `users/${user.uid}/applications`), limit(100)));
+      setApplications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Application)));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/applications`);
+    }
+  };
+
+  useEffect(() => {
+    fetchInterviews();
+    fetchApplications();
+  }, [user.uid]);
+
   const renderHeader = () => (
     <div className="flex items-center justify-between mb-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Interview Calendar</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-3xl font-bold tracking-tight">Interview Calendar</h1>
+          <button
+            onClick={fetchInterviews}
+            className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-lg"
+            title="Refresh"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
         <p className="text-gray-500 mt-1">Manage your interview schedule and preparation.</p>
       </div>
       <div className="flex items-center gap-4">
@@ -48,7 +84,7 @@ export default function Calendar({ user }: { user: UserProfile }) {
             <ChevronRight size={20} />
           </button>
         </div>
-        <button 
+        <button
           onClick={() => { setEditingInterview(null); setIsModalOpen(true); }}
           className="flex items-center gap-2 bg-black text-white px-6 py-3 rounded-2xl font-semibold hover:bg-gray-800 transition-all shadow-lg shadow-black/10"
         >
@@ -88,7 +124,7 @@ export default function Calendar({ user }: { user: UserProfile }) {
           const isSelected = isSameDay(day, selectedDate);
 
           return (
-            <div 
+            <div
               key={day.toString()}
               onClick={() => setSelectedDate(day)}
               className={`min-h-[120px] bg-white p-3 transition-all cursor-pointer hover:bg-gray-50/50 ${!isCurrentMonth ? 'opacity-40' : ''}`}
@@ -102,7 +138,7 @@ export default function Calendar({ user }: { user: UserProfile }) {
                 {dayInterviews.map(interview => {
                   const app = applications.find(a => a.id === interview.applicationId);
                   return (
-                    <div 
+                    <div
                       key={interview.id}
                       onClick={(e) => { e.stopPropagation(); setEditingInterview(interview); setIsModalOpen(true); }}
                       className="px-2 py-1 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-bold truncate hover:bg-indigo-100 transition-colors"
@@ -156,7 +192,7 @@ export default function Calendar({ user }: { user: UserProfile }) {
                         </span>
                       </div>
                     </div>
-                    <button 
+                    <button
                       onClick={() => { setEditingInterview(interview); setIsModalOpen(true); }}
                       className="p-2 opacity-0 group-hover:opacity-100 hover:bg-white rounded-lg transition-all"
                     >
@@ -191,10 +227,10 @@ export default function Calendar({ user }: { user: UserProfile }) {
       </div>
 
       {isModalOpen && (
-        <InterviewModal 
-          user={user} 
+        <InterviewModal
+          user={user}
           applications={applications}
-          onClose={() => { setIsModalOpen(false); setEditingInterview(null); }} 
+          onClose={() => { setIsModalOpen(false); setEditingInterview(null); fetchInterviews(); }}
           editingInterview={editingInterview}
         />
       )}
@@ -270,7 +306,7 @@ const InterviewModal = ({ user, applications, onClose, editingInterview }: { use
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-sm font-bold text-gray-700">Application *</label>
-              <select 
+              <select
                 required
                 className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
                 value={formData.applicationId}
@@ -284,7 +320,7 @@ const InterviewModal = ({ user, applications, onClose, editingInterview }: { use
             </div>
             <div className="space-y-2">
               <label className="text-sm font-bold text-gray-700">Interview Type</label>
-              <select 
+              <select
                 className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
                 value={formData.type}
                 onChange={e => setFormData({ ...formData, type: e.target.value as Interview['type'] })}
@@ -296,9 +332,9 @@ const InterviewModal = ({ user, applications, onClose, editingInterview }: { use
             </div>
             <div className="space-y-2 md:col-span-2">
               <label className="text-sm font-bold text-gray-700">Date & Time *</label>
-              <input 
+              <input
                 required
-                type="datetime-local" 
+                type="datetime-local"
                 className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
                 value={formData.date}
                 onChange={e => setFormData({ ...formData, date: e.target.value })}
@@ -308,7 +344,7 @@ const InterviewModal = ({ user, applications, onClose, editingInterview }: { use
 
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">Preparation Notes</label>
-            <textarea 
+            <textarea
               className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all min-h-[100px]"
               value={formData.notes}
               onChange={e => setFormData({ ...formData, notes: e.target.value })}
@@ -318,7 +354,7 @@ const InterviewModal = ({ user, applications, onClose, editingInterview }: { use
 
           <div className="space-y-2">
             <label className="text-sm font-bold text-gray-700">Questions to Ask</label>
-            <textarea 
+            <textarea
               className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all min-h-[100px]"
               value={formData.questions}
               onChange={e => setFormData({ ...formData, questions: e.target.value })}
@@ -330,7 +366,7 @@ const InterviewModal = ({ user, applications, onClose, editingInterview }: { use
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-sm font-bold text-gray-700">Feedback / Outcome</label>
-                <textarea 
+                <textarea
                   className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all min-h-[100px]"
                   value={formData.feedback}
                   onChange={e => setFormData({ ...formData, feedback: e.target.value })}
@@ -339,8 +375,8 @@ const InterviewModal = ({ user, applications, onClose, editingInterview }: { use
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-bold text-gray-700">Outcome Status</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="w-full px-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-black/5 transition-all"
                   value={formData.outcome}
                   onChange={e => setFormData({ ...formData, outcome: e.target.value })}
@@ -351,7 +387,7 @@ const InterviewModal = ({ user, applications, onClose, editingInterview }: { use
           )}
 
           <div className="pt-4 sticky bottom-0 bg-white pb-2">
-            <button 
+            <button
               type="submit"
               className="w-full flex items-center justify-center gap-2 bg-black text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-black/10"
             >
