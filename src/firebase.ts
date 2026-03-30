@@ -125,7 +125,7 @@ export async function uploadDocument(file: File, userId: string, documentData: D
       type: documentData.type,
       category: documentData.category,
       tags: documentData.tags || [],
-      notes: documentData.notes || undefined,
+      notes: documentData.notes || '',
       fileUrl,
       storagePath,
       fileSize: file.size,
